@@ -23,7 +23,6 @@ func Watch() {
 	fmt.Printf("  %swatching: %s%s\n", ui.Dim, acct.Address, ui.Reset)
 	fmt.Printf("  %spress Ctrl+C to stop%s\n\n", ui.Dim, ui.Reset)
 
-	// Handle Ctrl+C gracefully
 	sig := make(chan os.Signal, 1)
 	signal.Notify(sig, os.Interrupt)
 	go func() {
@@ -33,14 +32,13 @@ func Watch() {
 		os.Exit(0)
 	}()
 
-	backoff := time.Second
-	maxBackoff := 30 * time.Second
+	backoff := 5 * time.Second
+	maxBackoff := 60 * time.Second
 	failures := 0
 
 	for {
-		err := client.Watch(acct.ID, func(msg api.SSEMessage) {
-			// Reset backoff on successful message
-			backoff = time.Second
+		err := client.Watch(func(msg api.MessageSummary) {
+			backoff = 5 * time.Second
 			failures = 0
 
 			from := msg.From.Address
@@ -56,8 +54,8 @@ func Watch() {
 		})
 		if err != nil {
 			failures++
-			if failures >= 5 {
-				ui.Error(fmt.Sprintf("connection failed after %d attempts: %v", failures, err))
+			if failures >= 10 {
+				ui.Error(fmt.Sprintf("polling failed after %d attempts: %v", failures, err))
 				os.Exit(1)
 			}
 			ui.Error(fmt.Sprintf("connection lost: %v, retrying in %s...", err, backoff))
