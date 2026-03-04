@@ -1,0 +1,41 @@
+version: 2
+
+builds:
+  - main: .
+    binary: tmail
+    ldflags:
+      - -s -w -X main.version={{.Version}}
+    goos:
+      - darwin
+      - linux
+    goarch:
+      - amd64
+      - arm64
+
+archives:
+  - format: tar.gz
+    name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+
+brews:
+  - repository:
+      owner: Aayush9029
+      name: homebrew-tap
+      token: "{{ .Env.HOMEBREW_TAP_TOKEN }}"
+    directory: Formula
+    homepage: "https://github.com/Aayush9029/tmail"
+    description: "Disposable email in your terminal"
+    license: "MIT"
+    install: |
+      bin.install "tmail"
+    test: |
+      assert_match version.to_s, shell_output("#{bin}/tmail --version")
+
+checksum:
+  name_template: "checksums.txt"
+
+changelog:
+  sort: asc
+  filters:
+    exclude:
+      - "^docs:"
+      - "^test:"
