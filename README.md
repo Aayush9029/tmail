@@ -12,14 +12,11 @@ brew install aayush9029/tap/tmail
 
 ```bash
 tmail generate          # create a new disposable email (copied to clipboard)
-tmail messages          # list inbox
+tmail messages          # list inbox (select to open in Safari)
 tmail read 1            # read message #1
-tmail read 1 --plain    # read as plain text
-tmail read 1 --browser  # open in browser
-tmail watch             # real-time notifications
+tmail read 1 --browser  # open in Safari
 tmail me                # show account info
 tmail delete            # delete account
-tmail domains           # list available domains
 ```
 
 ---

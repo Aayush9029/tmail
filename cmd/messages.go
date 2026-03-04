@@ -1,7 +1,13 @@
 package cmd
 
 import (
+	"bufio"
 	"fmt"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"runtime"
+	"strconv"
 	"strings"
 	"time"
 
@@ -31,19 +37,64 @@ func Messages() {
 		return
 	}
 
-	// Table header
-	fmt.Printf("  %s%-4s %-25s %-35s %s%s\n", ui.Dim, "#", "FROM", "SUBJECT", "DATE", ui.Reset)
-	fmt.Printf("  %s%s%s\n", ui.Dim, strings.Repeat("─", 75), ui.Reset)
+	w := ui.TermWidth()
+	printMessageTable(msgs, w)
 
+	// Interactive mode: prompt to select a message
+	if !ui.IsTTY() {
+		return
+	}
+	fmt.Printf("  %senter message # to open in browser (or press enter to skip):%s ", ui.Dim, ui.Reset)
+	scanner := bufio.NewScanner(os.Stdin)
+	if !scanner.Scan() {
+		return
+	}
+	input := strings.TrimSpace(scanner.Text())
+	if input == "" {
+		return
+	}
+	num, err := strconv.Atoi(input)
+	if err != nil || num < 1 || num > len(msgs) {
+		ui.Fatalf("invalid message number: %s", input)
+	}
+
+	msg, err := client.GetMessage(msgs[num-1].ID)
+	if err != nil {
+		ui.Fatalf("failed to read message: %v", err)
+	}
+	openMessageInBrowser(msg)
+}
+
+func printMessageTable(msgs []api.MessageSummary, termWidth int) {
+	// Layout: " ● NN  FROM  SUBJECT  DATE"
+	// Fixed: marker=2, num=4, date=6, spacing=6 → overhead ~18
+	// Remaining split: from gets 30%, subject gets 70%
+	overhead := 18
+	avail := termWidth - overhead
+	if avail < 30 {
+		avail = 30
+	}
+	fromW := avail * 3 / 10
+	if fromW < 12 {
+		fromW = 12
+	}
+	subjW := avail - fromW
+	if subjW < 12 {
+		subjW = 12
+	}
+
+	hdrFmt := fmt.Sprintf("  %%s%%-%ds %%-%ds %%-%ds %%s%%s\n", 4, fromW, subjW)
+	fmt.Printf(hdrFmt, ui.Dim, "#", "FROM", "SUBJECT", "DATE", ui.Reset)
+	fmt.Printf("  %s%s%s\n", ui.Dim, strings.Repeat("─", termWidth-4), ui.Reset)
+
+	rowFmt := fmt.Sprintf(" %%s%%-%dd %%-%ds %%-%ds %%s\n", 4, fromW, subjW)
 	for i, m := range msgs {
 		from := m.From.Address
-		if len(from) > 24 {
-			from = from[:21] + "..."
+		if m.From.Name != "" {
+			from = m.From.Name
 		}
-		subject := m.Subject
-		if len(subject) > 34 {
-			subject = subject[:31] + "..."
-		}
+		from = truncate(from, fromW)
+		subject := truncate(m.Subject, subjW)
 		date := formatDate(m.CreatedAt)
 
 		marker := " "
@@ -51,9 +102,19 @@ func Messages() {
 			marker = ui.Cyan + "●" + ui.Reset
 		}
 
-		fmt.Printf(" %s%-4d %-25s %-35s %s\n", marker, i+1, from, subject, date)
+		fmt.Printf(rowFmt, marker, i+1, from, subject, date)
 	}
 	fmt.Println()
+}
+
+func truncate(s string, max int) string {
+	if len(s) <= max {
+		return s
+	}
+	if max <= 3 {
+		return s[:max]
+	}
+	return s[:max-3] + "..."
 }
 
 func formatDate(iso string) string {
@@ -66,4 +127,29 @@ func formatDate(iso string) string {
 		return t.Format("15:04")
 	}
 	return t.Format("Jan 02")
+}
+
+func openMessageInBrowser(msg *api.MessageFull) {
+	htmlContent := strings.Join(msg.HTML, "\n")
+	if htmlContent == "" {
+		htmlContent = "<pre>" + msg.Text + "</pre>"
+	}
+
+	tmpDir := os.TempDir()
+	tmpFile := filepath.Join(tmpDir, "tmail-message.html")
+	if err := os.WriteFile(tmpFile, []byte(htmlContent), 0o644); err != nil {
+		ui.Fatalf("failed to write temp file: %v", err)
+	}
+
+	var cmd *exec.Cmd
+	switch runtime.GOOS {
+	case "darwin":
+		cmd = exec.Command("open", "-a", "Safari", tmpFile)
+	default:
+		cmd = exec.Command("xdg-open", tmpFile)
+	}
+	if err := cmd.Start(); err != nil {
+		ui.Fatalf("failed to open browser: %v", err)
+	}
+	ui.Success("opened in Safari")
 }

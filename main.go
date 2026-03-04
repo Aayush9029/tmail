@@ -27,10 +27,6 @@ func main() {
 		cmd.Delete()
 	case "me":
 		cmd.Me()
-	case "watch", "w":
-		cmd.Watch()
-	case "domains":
-		cmd.Domains()
 	case "--version", "-v", "version":
 		fmt.Printf("tmail %s\n", version)
 	case "--help", "-h", "help":
@@ -50,16 +46,14 @@ func showHelp() {
 	}
 	fmt.Println()
 	fmt.Printf("  %sUSAGE%s\n", ui.Blue, ui.Reset)
-	fmt.Printf("    tmail <command> [options]\n")
+	fmt.Printf("    tmail <command>\n")
 	fmt.Println()
 	fmt.Printf("  %sCOMMANDS%s\n", ui.Blue, ui.Reset)
 	fmt.Printf("    generate, g    Create new disposable email\n")
-	fmt.Printf("    messages, m    List inbox messages\n")
-	fmt.Printf("    read, r <n>    Read message #n [--plain|-p] [--browser|-b]\n")
+	fmt.Printf("    messages, m    List inbox (interactive)\n")
+	fmt.Printf("    read, r <n>    Read message #n [--browser|-b]\n")
 	fmt.Printf("    delete, d      Delete account\n")
 	fmt.Printf("    me             Show account info\n")
-	fmt.Printf("    watch, w       Watch for new messages (real-time)\n")
-	fmt.Printf("    domains        List available domains\n")
 	fmt.Println()
 	fmt.Printf("  %sOPTIONS%s\n", ui.Blue, ui.Reset)
 	fmt.Printf("    -h, --help     Show this help\n")
