@@ -1,20 +1,118 @@
 package cmd
 
 import (
-	"bufio"
 	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"runtime"
-	"strconv"
 	"strings"
 	"time"
+
+	"github.com/charmbracelet/bubbles/list"
+	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 
 	"github.com/Aayush9029/tmail/internal/api"
 	"github.com/Aayush9029/tmail/internal/config"
 	"github.com/Aayush9029/tmail/internal/ui"
 )
+
+// --- BubbleTea list item ---
+
+type msgItem struct {
+	summary api.MessageSummary
+	rank    int
+}
+
+func (m msgItem) Title() string {
+	from := m.summary.From.Address
+	if m.summary.From.Name != "" {
+		from = m.summary.From.Name
+	}
+	marker := " "
+	if !m.summary.Seen {
+		marker = "●"
+	}
+	return fmt.Sprintf("%s %d. %s", marker, m.rank, from)
+}
+
+func (m msgItem) Description() string {
+	return fmt.Sprintf("%s  %s", m.summary.Subject, formatDate(m.summary.CreatedAt))
+}
+
+func (m msgItem) FilterValue() string {
+	return m.summary.From.Address + " " + m.summary.Subject
+}
+
+// --- BubbleTea model ---
+
+type inboxModel struct {
+	list     list.Model
+	client   *api.Client
+	msgs     []api.MessageSummary
+	quitting bool
+	opening  bool
+}
+
+func newInboxModel(client *api.Client, msgs []api.MessageSummary, address string) inboxModel {
+	items := make([]list.Item, len(msgs))
+	for i, m := range msgs {
+		items[i] = msgItem{summary: m, rank: i + 1}
+	}
+
+	l := list.New(items, list.NewDefaultDelegate(), 0, 0)
+	l.Title = fmt.Sprintf("📬 %s", address)
+	l.Styles.Title = lipgloss.NewStyle().
+		Foreground(lipgloss.Color("36")).
+		Bold(true).
+		MarginLeft(2)
+	l.SetShowStatusBar(true)
+	l.DisableQuitKeybindings()
+
+	return inboxModel{
+		list:   l,
+		client: client,
+		msgs:   msgs,
+	}
+}
+
+func (m inboxModel) Init() tea.Cmd { return nil }
+
+func (m inboxModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	switch msg := msg.(type) {
+	case tea.KeyMsg:
+		switch msg.String() {
+		case "q", "ctrl+c", "esc":
+			m.quitting = true
+			return m, tea.Quit
+		case "enter":
+			if item, ok := m.list.SelectedItem().(msgItem); ok {
+				m.opening = true
+				full, err := m.client.GetMessage(item.summary.ID)
+				if err == nil {
+					openMessageInBrowser(full)
+				}
+				return m, tea.Quit
+			}
+		}
+	case tea.WindowSizeMsg:
+		m.list.SetSize(msg.Width, msg.Height)
+	}
+
+	var cmd tea.Cmd
+	m.list, cmd = m.list.Update(msg)
+	return m, cmd
+}
+
+func (m inboxModel) View() string {
+	if m.quitting || m.opening {
+		return ""
+	}
+	return m.list.View()
+}
+
+// --- Entry point ---
 
 func Messages() {
 	acct, err := config.Load()
@@ -28,49 +126,36 @@ func Messages() {
 		ui.Fatalf("failed to fetch messages: %v", err)
 	}
 
-	ui.Header("tmail")
-	fmt.Printf("  %sinbox: %s%s\n\n", ui.Dim, acct.Address, ui.Reset)
-
 	if len(msgs) == 0 {
+		ui.Header("tmail")
+		fmt.Printf("  %sinbox: %s%s\n\n", ui.Dim, acct.Address, ui.Reset)
 		ui.Dimf("no messages yet")
 		fmt.Println()
 		return
 	}
 
-	w := ui.TermWidth()
-	printMessageTable(msgs, w)
-
-	// Interactive mode: prompt to select a message
+	// Non-interactive: plain table (for piping / Claude Code)
 	if !ui.IsTTY() {
+		printMessageTable(msgs, acct.Address)
 		return
-	}
-	fmt.Printf("  %senter message # to open in browser (or press enter to skip):%s ", ui.Dim, ui.Reset)
-	scanner := bufio.NewScanner(os.Stdin)
-	if !scanner.Scan() {
-		return
-	}
-	input := strings.TrimSpace(scanner.Text())
-	if input == "" {
-		return
-	}
-	num, err := strconv.Atoi(input)
-	if err != nil || num < 1 || num > len(msgs) {
-		ui.Fatalf("invalid message number: %s", input)
 	}
 
-	msg, err := client.GetMessage(msgs[num-1].ID)
-	if err != nil {
-		ui.Fatalf("failed to read message: %v", err)
+	// Interactive: BubbleTea list
+	m := newInboxModel(client, msgs, acct.Address)
+	p := tea.NewProgram(m, tea.WithAltScreen())
+	if _, err := p.Run(); err != nil {
+		ui.Fatalf("TUI error: %v", err)
 	}
-	openMessageInBrowser(msg)
 }
 
-func printMessageTable(msgs []api.MessageSummary, termWidth int) {
-	// Layout: " ● NN  FROM  SUBJECT  DATE"
-	// Fixed: marker=2, num=4, date=6, spacing=6 → overhead ~18
-	// Remaining split: from gets 30%, subject gets 70%
+func printMessageTable(msgs []api.MessageSummary, address string) {
+	w := ui.TermWidth()
+
+	ui.Header("tmail")
+	fmt.Printf("  %sinbox: %s%s\n\n", ui.Dim, address, ui.Reset)
+
 	overhead := 18
-	avail := termWidth - overhead
+	avail := w - overhead
 	if avail < 30 {
 		avail = 30
 	}
@@ -85,7 +170,7 @@ func printMessageTable(msgs []api.MessageSummary, termWidth int) {
 
 	hdrFmt := fmt.Sprintf("  %%s%%-%ds %%-%ds %%-%ds %%s%%s\n", 4, fromW, subjW)
 	fmt.Printf(hdrFmt, ui.Dim, "#", "FROM", "SUBJECT", "DATE", ui.Reset)
-	fmt.Printf("  %s%s%s\n", ui.Dim, strings.Repeat("─", termWidth-4), ui.Reset)
+	fmt.Printf("  %s%s%s\n", ui.Dim, strings.Repeat("─", w-4), ui.Reset)
 
 	rowFmt := fmt.Sprintf(" %%s%%-%dd %%-%ds %%-%ds %%s\n", 4, fromW, subjW)
 	for i, m := range msgs {
@@ -101,7 +186,6 @@ func printMessageTable(msgs []api.MessageSummary, termWidth int) {
 		if !m.Seen {
 			marker = ui.Cyan + "●" + ui.Reset
 		}
-
 		fmt.Printf(rowFmt, marker, i+1, from, subject, date)
 	}
 	fmt.Println()
@@ -151,5 +235,4 @@ func openMessageInBrowser(msg *api.MessageFull) {
 	if err := cmd.Start(); err != nil {
 		ui.Fatalf("failed to open browser: %v", err)
 	}
-	ui.Success("opened in Safari")
 }
