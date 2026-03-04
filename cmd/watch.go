@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"os/signal"
+	"time"
 
 	"github.com/Aayush9029/tmail/internal/api"
 	"github.com/Aayush9029/tmail/internal/config"
@@ -32,8 +33,16 @@ func Watch() {
 		os.Exit(0)
 	}()
 
+	backoff := time.Second
+	maxBackoff := 30 * time.Second
+	failures := 0
+
 	for {
 		err := client.Watch(acct.ID, func(msg api.SSEMessage) {
+			// Reset backoff on successful message
+			backoff = time.Second
+			failures = 0
+
 			from := msg.From.Address
 			if msg.From.Name != "" {
 				from = msg.From.Name + " <" + msg.From.Address + ">"
@@ -46,7 +55,17 @@ func Watch() {
 			fmt.Println()
 		})
 		if err != nil {
-			ui.Error(fmt.Sprintf("connection lost: %v, reconnecting...", err))
+			failures++
+			if failures >= 5 {
+				ui.Error(fmt.Sprintf("connection failed after %d attempts: %v", failures, err))
+				os.Exit(1)
+			}
+			ui.Error(fmt.Sprintf("connection lost: %v, retrying in %s...", err, backoff))
+			time.Sleep(backoff)
+			backoff *= 2
+			if backoff > maxBackoff {
+				backoff = maxBackoff
+			}
 		}
 	}
 }
