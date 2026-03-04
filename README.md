@@ -1,5 +1,9 @@
 # tmail
 
+
+<img width="2044" height="1300" alt="CleanShot 2026-03-04 at 08 42 40@2x" src="https://github.com/user-attachments/assets/d495167e-5c71-46b9-8942-cceca77e1e06" />
+
+
 Disposable email in your terminal.
 
 ## Install
