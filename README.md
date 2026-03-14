@@ -1,8 +1,8 @@
+<img src="assets/icon.png" width="128" alt="tmail">
+
 # tmail
 
 Disposable email in your terminal.
-
-<img alt="tmail preview" src="assets/preview.jpg" />
 
 ## Install
 
