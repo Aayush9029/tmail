@@ -4,6 +4,8 @@
 
 Disposable email in your terminal.
 
+<p align="center"><img src="assets/demo.gif" alt="tmail demo" width="800"></p>
+
 ## Install
 
 ```bash
