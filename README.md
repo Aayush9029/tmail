@@ -10,7 +10,7 @@
 </p>
 
 <p align="center">
-  <img src="assets/demo.gif" alt="tmail demo" width="800">
+  <img src="assets/demo.gif" alt="tmail demo">
 </p>
 
 ## Install
